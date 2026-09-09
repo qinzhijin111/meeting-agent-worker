@@ -4,67 +4,140 @@ import json
 import logging
 
 from dotenv import load_dotenv
-from livekit.agents import AgentServer, JobContext, cli
+from livekit.agents import (
+    AgentServer,
+    JobContext,
+    cli,
+)
+
+from agents.registry import (
+    WORKER_DISPATCH_NAME,
+    get_agent_definition,
+)
+from models.metadata import (
+    AgentJobMetadata,
+    AgentType,
+    parse_agent_job_metadata,
+)
 
 
 load_dotenv()
 
-logger = logging.getLogger("agentmeet-minimal-agent")
+logger = logging.getLogger(
+    "agentmeet-agent"
+)
 logger.setLevel(logging.INFO)
-
-AGENT_DISPATCH_NAME = "agentmeet-minimal"
-AGENT_DISPLAY_NAME = "AgentMeet Minimal Agent"
 
 
 server = AgentServer()
 
 
-@server.rtc_session(agent_name=AGENT_DISPATCH_NAME)
-async def entrypoint(ctx: JobContext) -> None:
+@server.rtc_session(
+    agent_name=WORKER_DISPATCH_NAME
+)
+async def entrypoint(
+    ctx: JobContext,
+) -> None:
     """
-    Minimal Week 5 agent.
+    Modular AgentMeet worker entrypoint.
 
-    It does not use STT, LLM, or TTS yet.
-    Its only job is to join a LiveKit room and identify itself
-    as an agent participant.
+    Local connect mode falls back to the minimal agent.
+
+    Explicit-dispatch jobs validate JSON metadata
+    before joining the room.
     """
 
     ctx.log_context_fields = {
         "room": ctx.room.name,
-        "agent_name": AGENT_DISPATCH_NAME,
+        "agent_name": WORKER_DISPATCH_NAME,
     }
+
+    job_metadata: AgentJobMetadata | None = None
+
+    raw_metadata = (
+        ctx.job.metadata or ""
+    ).strip()
+
+    if raw_metadata:
+        try:
+            job_metadata = (
+                parse_agent_job_metadata(
+                    raw_metadata
+                )
+            )
+        except ValueError:
+            logger.error(
+                "Rejecting agent job because "
+                "metadata is invalid."
+            )
+            return
+
+        if (
+            job_metadata.room_name
+            != ctx.room.name
+        ):
+            logger.error(
+                "Rejecting agent job because "
+                "metadata room name does not "
+                "match the assigned room."
+            )
+            return
+
+        definition = get_agent_definition(
+            job_metadata.agent_type
+        )
+
+    else:
+        # Local `connect` mode does not require
+        # dispatch metadata.
+        definition = get_agent_definition(
+            AgentType.MINIMAL
+        )
 
     disconnected = asyncio.Event()
 
     @ctx.room.on("disconnected")
     def on_disconnected(_reason) -> None:
-        logger.info("Agent disconnected from room.")
+        logger.info(
+            "Agent disconnected from room."
+        )
         disconnected.set()
 
-    # Join the LiveKit room.
     await ctx.connect()
 
-    participant = ctx.room.local_participant
+    participant = (
+        ctx.room.local_participant
+    )
 
-    # Give the agent a human-readable display name.
+    participant_metadata = {
+        "participantType": "agent",
+        "agentType": (
+            definition.agent_type.value
+        ),
+        "displayName": (
+            definition.display_name
+        ),
+    }
+
+    if job_metadata is not None:
+        participant_metadata[
+            "roomId"
+        ] = str(job_metadata.room_id)
+
     try:
         await participant.set_name(
-            AGENT_DISPLAY_NAME
+            definition.display_name
         )
     except Exception:
         logger.warning(
-            "Unable to update agent display name."
+            "Unable to update agent "
+            "display name."
         )
 
-    # Metadata matches the format already understood
-    # by the Week 4 MeetingRoom UI.
     try:
         await participant.set_metadata(
             json.dumps(
-                {
-                    "participantType": "agent",
-                    "agentType": "minimal",
-                }
+                participant_metadata
             )
         )
     except Exception:
@@ -75,26 +148,31 @@ async def entrypoint(ctx: JobContext) -> None:
     try:
         await participant.set_attributes(
             {
-                "agent.type": "minimal",
+                "agent.type": (
+                    definition.agent_type.value
+                ),
                 "agent.status": "ready",
             }
         )
     except Exception:
         logger.warning(
-            "Unable to update agent attributes."
+            "Unable to update agent "
+            "attributes."
         )
 
     logger.info(
-        "Minimal agent joined room.",
+        "Agent joined room.",
         extra={
             "room": ctx.room.name,
-            "participant_identity": participant.identity,
-            "participant_name": participant.name,
+            "participant_identity": (
+                participant.identity
+            ),
+            "agent_type": (
+                definition.agent_type.value
+            ),
         },
     )
 
-    # Keep the minimal participant alive until
-    # LiveKit disconnects the job.
     await disconnected.wait()
 
 
