@@ -29,7 +29,10 @@ logger = logging.getLogger(
 logger.setLevel(logging.INFO)
 
 
-server = AgentServer()
+server = AgentServer(
+    host="0.0.0.0",
+    port=8081,
+)
 
 
 @server.rtc_session(
