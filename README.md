@@ -96,3 +96,82 @@ The agent worker owns:
 
 The worker never receives the room password.
 
+## Week 5: Agent Worker and Modal Deployment
+
+This repository contains the Python LiveKit Agent worker for AgentMeet.
+
+### Implemented
+
+- LiveKit Agent worker
+- Agent Registry and metadata validation
+- Note Taker, Assistant, and Translator agent types
+- Explicit dispatch support
+- Modal deployment
+- Health endpoint on port `8081`
+- Modal Secret injection
+
+### Local development
+
+Create and activate the virtual environment:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+```
+
+Run the worker locally:
+
+```powershell
+python agent.py dev
+```
+
+### Modal deployment
+
+Deploy the worker:
+
+```powershell
+modal deploy modal_app.py
+```
+
+View logs:
+
+```powershell
+modal app logs agentmeet-agent-worker -f
+```
+
+The Modal Secret is named:
+
+```text
+agentmeet-livekit
+```
+
+Required environment variables:
+
+```text
+LIVEKIT_URL
+LIVEKIT_API_KEY
+LIVEKIT_API_SECRET
+```
+
+Real secret values must not be committed to Git.
+
+### Agent flow
+
+```text
+Web App
+→ LiveKit explicit dispatch
+→ Modal-hosted worker
+→ Agent joins the meeting room
+```
+
+The host can also stop an active agent, which removes the LiveKit dispatch and updates the agent state in `room_agents`.
+
+### Week 5 verification
+
+- Agent can join an active room
+- Duplicate starts are prevented
+- Invalid agent types fail safely
+- Worker can run on Modal
+- Human calls continue if the agent fails
+- Host can start and stop an agent
