@@ -10,16 +10,31 @@ from models.metadata import (
 )
 
 
-def make_valid_metadata() -> str:
+def make_valid_metadata():
     return json.dumps(
         {
-            "room_id": str(uuid4()),
-            "room_name": "room_test",
-            "agent_type": "notes",
-            "started_by": str(uuid4()),
+            "room_id": str(
+                uuid4()
+            ),
+
+            "room_name":
+                "room_test",
+
+            "agent_session_id": str(
+                uuid4()
+            ),
+
+            "agent_type":
+                "notes",
+
+            "started_by": str(
+                uuid4()
+            ),
+
             "settings": {},
         }
     )
+
 
 
 def test_valid_metadata():
